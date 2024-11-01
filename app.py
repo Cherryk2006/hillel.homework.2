@@ -60,7 +60,7 @@ def contracts():
     if request.method == 'POST':
         return 'POST'
 
-@app.route('/contracts/<int:contract_id>', methods=['GET', 'PATCH/PUT'])
+@app.route('/contracts/<int:contract_id>', methods=['GET', 'PATCH', 'PUT'])
 def contract_detail(contract_id):
     if request.method == 'GET':
         return f'GET {contract_id}'
