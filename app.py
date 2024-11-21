@@ -45,6 +45,46 @@ def index():  # put application's code here
     return render_template('index.html')
 
 
+class DbHandle:
+    db_filter = 'db3.db'
+
+    def select(self, table_name, filter_dict=None, join_table=None, join_conditions = None):
+        if filter_dict is None:
+            filter_dict = {}
+        with DB_local(self.db_filter) as db_cur:
+            query = f'SELECT * FROM {table_name}'
+
+            if join_table is not None:
+                query += f' JOIN {join_table} as right_table ON '
+                join_conditions_list = []
+                for left_field, right_field in join_conditions:
+                    join_conditions_list.append(f'{table_name}.{left_field} = right_table.{right_field}')
+                query += ' AND '.join(join_conditions_list)
+
+            if filter_dict:
+                query += ' WHERE '
+                itms = []
+                for key, value in filter_dict.items():
+                    itms.append(f'{key} = ?')
+                query += ' AND '.join(itms)
+
+            db_cur.execute(query, tuple(value for key, value in filter_dict.items()))
+            return db_cur.fetchall()
+
+    def insert(self, table_name, data_dict):
+        with DB_local(self.db_filter) as db_cur:
+            query = f'INSERT INTO {table_name}('
+            query += ','.join(data_dict.keys())
+            query += ') VALUES ('
+            query += ','.join([f':{itm}' for itm in data_dict.keys()])
+            query += ')'
+            # insert into {table_name} (a1, a2, a3) values (:?, :?, :?)
+            db_cur.execute(query, data_dict)
+
+
+db_connector = DbHandle()
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
@@ -53,18 +93,12 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        with DB_local(request.files['db3.db']) as db_project:
-            db_project.execute('''SELECT * FROM user WHERE login = ? AND password = ?'''
-                               , (username, password))
-            user = db_project.fetchone()
-            if user:
-                session['user_id'] = user['login']
-                return "Login Successful"
-            else:
-                return "Wrong Username or Password", 401
-
-    if request.method == 'POST':
-        return 'POST'
+        user_data = db_connector.select('user', {'login': username, 'password': password})
+        if user_data:
+            session['user_id'] = user_data[0]['login']
+            return "Login Successful"
+        else:
+            return "Wrong Username or Password", 401
 
 
 @app.route('/logout', methods=['GET', 'POST', 'DELETE'])
@@ -78,61 +112,45 @@ def register():
     if request.method == 'GET':
         return render_template('register.html')
     if request.method == 'POST':
-        with DB_local('db3.db') as db_cur:
-            form_data = request.form
-            db_cur.execute('''INSERT INTO users
-             (login, password, full_name, contacts, ipn, photo, passport) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                           (
-                               form_data['login'], form_data['password'], form_data['full_name'],
-                               form_data['contacts'], form_data['ipn'], form_data['photo'], form_data['passport']
-                                       )
-                           )
+        form_data = request.form
+        db_connector.insert('user', form_data)
         return redirect('/login')
 
 
 @app.route('/items', methods=['GET', 'POST'])
 def items(db_project=None):
     if request.method == 'GET':
-        with DB_local('db3.db') as db_cur:
-            db_cur.execute("SELECT * FROM item")
-            item = db_cur.fetchall()
+        items = db_connector.select('items')
         return render_template(items.html)
+
     if request.method == 'POST':
-        with DB_local('db3.db') as db_cur:
-            
-            user_login = session['user_id']
-            db_project.execute("SELECT id FROM user WHERE login = ?", (user_login,))
-            user_id = db_project.fetchone()['id']
+        if session.get('user_id') is None:
+            return redirect('/login')
+        else:
+            user_id = db_connector.select('user', {'login': session['user_id']})[0]['login']
             
             query_args = request.form
             query_args['owner_id'] = user_id
-            
-            db_cur.execute('''INSERT INTO item (photo, name, description, price_hour, price_day, price_week, price_month, owner_id)
-            VALUES (:photo, :name, :description, :price_hour, :price_day, :price_week, :price_month, :owner_id)''', query_args)
-        return redirect("/item")
+
+            db_connector.insert('items', query_args)
+            return redirect("/item")
 
 
 @app.route('/items/<int:item_id>', methods=['GET', 'DELETE'])
 def item_detail(item_id):
     if request.method == 'GET':
-        with DB_local('db3.db') as db_cur:
-            db_cur.execute("SELECT * FROM item WHERE id = ?", (item_id,))
-            item = db_cur.fetchone()
-            return render_template(item.html)
-        return f'GET {item_id}'
+        item = db_connector.select('item', {'id': item_id})[0]
+        return render_template(item.html)
     if request.method == 'DELETE':
-        with DB_local('db3.db') as db_cur:
-            db_cur.execute("DELETE FROM item WHERE id = ?", (item_id,))
-        return redirect('/items')
+        if session.get('user_id') is None:
+            return redirect('/login')
+        return f'DELETE {item_id}'
 
 
 @app.route('/leasers', methods=['GET'])
 def leasers():
     if request.method == 'GET':
-        with DB_local('db3.db') as db_cur:
-            db_cur.execute("SELECT * FROM leaser")
-            leaser = db_cur.fetchall()
+        leasers = db_connector.select('leasers')
         return render_template("leasers.html")
 
 
@@ -149,9 +167,7 @@ def leaser_detail(leaser_id):
 @login_required
 def contracts():
     if request.method == 'GET':
-        with DB_local('db3.db') as db_cur:
-            db_cur.execute("SELECT * FROM contract")
-            contract = db_cur.fetchall()
+        contracts = db_connector.select('contracts')
         return render_template('contracts.html')
 
     if request.method == 'POST':
