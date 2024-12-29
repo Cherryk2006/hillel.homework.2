@@ -1,4 +1,7 @@
+import datetime
+
 from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import mapped_column
 from database import Base
 
 
@@ -11,6 +14,7 @@ class User(Base):
     full_name = Column(String(150))
     contacts = Column(String(150))
     photo = Column(String(150))
+    email = Column(String(150), nullable=True)
 
     def __init__(self, login, password, ipn, full_name, contacts, photo):
         self.login = login
@@ -19,6 +23,25 @@ class User(Base):
         self.full_name = full_name
         self.contacts = contacts
         self.photo = photo
+
+class Feedback(Base):
+
+    def __init__(self, author = None, user = None, grade = None, contract = None):
+        self.author = author
+        self.user = user
+        self.grade = grade
+        self.contract = contract
+
+class Favorite(Base):
+    __tablename__ = 'favorite'
+    id = Column(Integer, primary_key=True)
+    user_id = mapped_column(ForeignKey('user.user.id'))
+    item = mapped_column(ForeignKey('item.id'))
+    timestamp = Column(DateTime, default=datetime.datetime.now, nullable=False)
+
+    def __init__(self, user = None, item = None):
+        self.user = user
+        self.item = item
 
 
 class Item(Base):

@@ -51,7 +51,7 @@ def index():  # put application's code here
 
 
 class DbHandle:
-    db_filter = 'db3.db'
+    db_filter = 'db3_.db'
 
     def select(self, table_name, filter_dict=None, join_table=None, join_conditions=None):
         if filter_dict is None:
@@ -182,7 +182,7 @@ def leasers():
 
 @app.route('/leasers/<int:leaser_id>', methods=['GET'])
 def leaser_detail(leaser_id):
-    with DB_local('db3.db') as db_cur:
+    with DB_local('db3_.db') as db_cur:
         db_cur.execute("SELECT * FROM leaser WHERE id = ?", (leaser_id,))
         leaser = db_cur.fetchone()
     if request.method == 'GET':
@@ -199,7 +199,7 @@ def contracts():
     if request.method == 'POST':
         query = """INSERT INTO contract (text, start_date, end_date, leaser, taker, item) VALUES (?, ?, ?, ?, ?, ?)"""
 
-        with DB_local('db3.db') as db_project:
+        with DB_local('db3_.db') as db_project:
             db_project.execute("SELECT id FROM user WHERE login = ?", (session['user_id'],))
             my_id = db_project.fetchone()['id']
             taker_id = my_id
@@ -255,7 +255,7 @@ def compare():
 @app.route('/profile', methods=['GET', 'PUT/PATCH', 'DELETE'])
 def profile():
     if request.method == 'GET':
-        with DB_local('db3.db') as db_cur:
+        with DB_local('db3_.db') as db_cur:
             query = f'''SELECT full_name FROM user WHERE login = ?'''
             print(query)
             db_cur.execute(query, (session["user_id"],))
