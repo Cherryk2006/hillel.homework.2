@@ -1,8 +1,13 @@
+import sqlite3
 from functools import wraps
 
-from flask import Flask, request, render_template, redirect, session
-import sqlite3
+import db
+from flask import Flask, request, render_template, redirect, session, jsonify
+from sqlalchemy import select
+from sqlalchemy.sql.functions import current_user
 
+import models
+from database import init_db, db_session
 
 app = Flask(__name__)
 
@@ -48,7 +53,7 @@ def index():  # put application's code here
 class DbHandle:
     db_filter = 'db3.db'
 
-    def select(self, table_name, filter_dict=None, join_table=None, join_conditions = None):
+    def select(self, table_name, filter_dict=None, join_table=None, join_conditions=None):
         if filter_dict is None:
             filter_dict = {}
         with DB_local(self.db_filter) as db_cur:
@@ -92,8 +97,10 @@ def login():
     elif request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        init_db()
+        query = select(models.User).where(username == models.User.login)
+        user_data = db.session.execute(query).first()
 
-        user_data = db_connector.select('user', {'login': username, 'password': password})
         if user_data:
             session['user_id'] = user_data[0]['login']
             return "Login Successful"
@@ -112,40 +119,59 @@ def register():
     if request.method == 'GET':
         return render_template('register.html')
     if request.method == 'POST':
-        form_data = request.form
+        form_data = dict(request.form)
+        init_db()
+        user = models.User(**form_data)
+        db_session.add(user)
+        db_session.commit()
         db_connector.insert('user', form_data)
         return redirect('/login')
 
 
 @app.route('/items', methods=['GET', 'POST'])
-def items(db_project=None):
+def items(db_project=None, items=None):
     if request.method == 'GET':
-        items = db_connector.select('items')
-        return render_template(items.html)
+        init_db()
+        items_query = select(models.Item)
+        items = list(db.session.execute(items).scalars())
+        return render_template('items.html', items=items)
 
     if request.method == 'POST':
         if session.get('user_id') is None:
             return redirect('/login')
         else:
+            init_db()
             user_id = db_connector.select('user', {'login': session['user_id']})[0]['login']
+            current_user = db_connector.scalar(select(models.User).where(models.User.login == session['logged_in']))
             
-            query_args = request.form
-            query_args['owner_id'] = user_id
+            query_args = dict(request.form)
+            query_args['owner_id'] = current_user.id
+            new_item = models.Item(**query_args)
 
-            db_connector.insert('items', query_args)
+            db_session.add(new_item)
+            db_session.commit()
             return redirect("/item")
 
 
 @app.route('/items/<int:item_id>', methods=['GET', 'DELETE'])
 def item_detail(item_id):
+    item = db_session.query(models.Item).get(item_id)
     if request.method == 'GET':
-        item = db_connector.select('item', {'id': item_id})[0]
-        return render_template(item.html)
-    if request.method == 'DELETE':
-        if session.get('user_id') is None:
-            return redirect('/login')
-        return f'DELETE {item_id}'
-
+        return jsonify({
+            'id': item.id,
+            'name': item.name,
+            'description': item.description,
+            'price_hour': item.price_hour,
+            'price_day': item.price_day,
+            'price_week': item.price_week,
+            'price_month': item.price_month
+        }) if item else ("Item not found", 404)
+    elif request.method == 'DELETE':
+        if 'user_id' not in session or item.owner_id != session['user_id']:
+            return "Unauthorized", 403
+        db_session.delete(item)
+        db_session.commit()
+        return redirect('/items')
 
 @app.route('/leasers', methods=['GET'])
 def leasers():
@@ -184,7 +210,8 @@ def contracts():
 
             contract_status = "pending"
 
-            query_args = (request.form['text'], request.form['start_date'], request.form['end_date'], leaser, taker_id, item_id, contract_status)
+            query_args = (request.form['text'], request.form['start_date'], request.form['end_date'], leaser, taker_id,
+                          item_id, contract_status)
             insert_query = """INSERT INTO contract (text, start_date, end_date, leaser, taker, item, status) VALUES (?, ?, ?, ?, ?, ?, ?)"""
             db_project.execute(insert_query, query_args)
 
