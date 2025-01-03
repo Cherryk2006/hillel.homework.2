@@ -2,12 +2,14 @@ import sqlite3
 from functools import wraps
 
 import db
+from celery.apps import worker
 from flask import Flask, request, render_template, redirect, session, jsonify
 from sqlalchemy import select
 from sqlalchemy.sql.functions import current_user
 
 import models
 from database import init_db, db_session
+import celery_tasks
 
 app = Flask(__name__)
 
@@ -191,7 +193,7 @@ def leaser_detail(leaser_id):
 
 @app.route('/contracts', methods=['GET', 'POST'])
 @login_required
-def contracts():
+def contracts(contract_id=None):
     if request.method == 'GET':
         contracts = db_connector.select('contracts')
         return render_template('contracts.html')
@@ -214,6 +216,7 @@ def contracts():
                           item_id, contract_status)
             insert_query = """INSERT INTO contract (text, start_date, end_date, leaser, taker, item, status) VALUES (?, ?, ?, ?, ?, ?, ?)"""
             db_project.execute(insert_query, query_args)
+            celery_tasks.send_email(contract_id)
 
         return 'POST'
 
@@ -289,5 +292,11 @@ def search_history():
         return 'DELETE'
 
 
+@app.route('/add_task', methods=['GET'])
+def set_task():
+    worker.add.delay(1, 2)
+    return 'Task added'
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8080)
+    app.run(debug=True, host='0.0.0.0', port=5001)
